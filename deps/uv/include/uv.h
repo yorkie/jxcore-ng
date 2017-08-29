@@ -259,6 +259,16 @@ UV_EXTERN int uv_replace_allocator(uv_malloc_func malloc_func,
 UV_EXTERN uv_loop_t* uv_default_loop(void);
 UV_EXTERN int uv_loop_init(uv_loop_t* loop);
 UV_EXTERN int uv_loop_close(uv_loop_t* loop);
+
+UV_EXTERN void uv_set_multi_thread();
+UV_EXTERN void uv_threadkey_new(int recreate);
+UV_EXTERN void uv_threadkey_setid(int* id);
+UV_EXTERN int uv_threadkey_getid();
+UV_EXTERN void uv_thread_loops_add(const int id, uv_loop_t* loop);
+
+UV_EXTERN int uv_thread_hasmsg(const int tid);
+UV_EXTERN void uv_thread_setmsg(const int tid, const int has_it);
+
 /*
  * NOTE:
  *  This function is DEPRECATED (to be removed after 0.12), users should
@@ -275,6 +285,7 @@ UV_EXTERN size_t uv_loop_size(void);
 UV_EXTERN int uv_loop_alive(const uv_loop_t* loop);
 UV_EXTERN int uv_loop_configure(uv_loop_t* loop, uv_loop_option option, ...);
 UV_EXTERN int uv_loop_fork(uv_loop_t* loop);
+UV_EXTERN void uv_multithreaded();
 
 UV_EXTERN int uv_run(uv_loop_t*, uv_run_mode mode);
 UV_EXTERN void uv_stop(uv_loop_t*);
@@ -405,6 +416,7 @@ struct uv_shutdown_s {
 #define UV_HANDLE_FIELDS                                                      \
   /* public */                                                                \
   void* data;                                                                 \
+  int threadId;                                                               \
   /* read-only */                                                             \
   uv_loop_t* loop;                                                            \
   uv_handle_type type;                                                        \
@@ -1472,6 +1484,7 @@ union uv_any_req {
 struct uv_loop_s {
   /* User data - use this for whatever. */
   void* data;
+  int id;
   /* Loop reference counting. */
   unsigned int active_handles;
   void* handle_queue[2];

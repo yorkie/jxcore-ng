@@ -587,12 +587,69 @@ int uv_loop_configure(uv_loop_t* loop, uv_loop_option option, ...) {
   return err;
 }
 
-
 static uv_loop_t default_loop_struct;
 static uv_loop_t* default_loop_ptr;
 
+/**
+ * Added for JSCore
+ */
+static int uv_multi_thread = 0;
+static pthread_key_t uv_threadkey;
+static int uv_threadkey_created = 0;
+static int uv_thread_messages[65] = {0};
+uv_loop_t* uv_thread_loops[64] = {NULL};
 
-uv_loop_t* uv_default_loop(void) {
+
+void uv_set_multi_thread() {
+  uv_multi_thread = 1;
+}
+
+void uv_threadkey_new(int recreate) {
+  if (uv_threadkey_created == 1 && recreate == 0) return;
+  uv_threadkey_created = 1;
+
+  if (recreate == 1 && uv_threadkey_created == 1) {
+    pthread_key_delete(&uv_threadkey);
+  }
+  pthread_key_create(&uv_threadkey, NULL);
+}
+
+void uv_threadkey_setid(int* id) {
+  void* ptr;
+  if (*id == 0 || (ptr = pthread_getspecific(uv_threadkey)) == NULL) {
+    ptr = (void*)id;
+
+    pthread_setspecific(uv_threadkey, ptr);
+  }
+}
+
+int uv_threadkey_getid() {
+  void* ptr = pthread_getspecific(uv_threadkey);
+  if (ptr == NULL) {
+    return -2;
+  }
+
+  int q = (*((int*)ptr)) - 1;
+  assert(q < 64);
+  return q;
+}
+
+void uv_thread_loops_add(const int id, uv_loop_t* loop) { 
+  uv_thread_loops[id] = loop; 
+}
+
+int uv_thread_hasmsg(const int tid) {
+  if (tid == -1) 
+    return 0;
+  return uv_thread_messages[tid];
+}
+
+void uv_thread_setmsg(const int tid, const int has_it) {
+  if (tid >= 0)
+    uv_thread_messages[tid] = has_it;
+}
+
+uv_loop_t* uv_default_loop_ex(void) {
   if (default_loop_ptr != NULL)
     return default_loop_ptr;
 
@@ -603,6 +660,19 @@ uv_loop_t* uv_default_loop(void) {
   return default_loop_ptr;
 }
 
+uv_loop_t* uv_default_loop(void) {
+  int tid;
+  if (!uv_multi_thread) 
+    return uv_default_loop_ex();
+
+  tid = uv_threadkey_getid();
+  if (tid == -1)
+    return uv_default_loop_ex();
+
+  if (uv_thread_loops[tid] == NULL)
+    uv_thread_loops[tid] = uv_loop_new();
+  return uv_thread_loops[tid];
+}
 
 uv_loop_t* uv_loop_new(void) {
   uv_loop_t* loop;
@@ -645,7 +715,11 @@ int uv_loop_close(uv_loop_t* loop) {
 #endif
   if (loop == default_loop_ptr)
     default_loop_ptr = NULL;
-
+  else {
+    int tid = uv_threadkey_getid();
+    uv_loop_close(uv_thread_loops[tid]);
+    uv_thread_loops[tid] = NULL;
+  }
   return 0;
 }
 
